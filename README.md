@@ -24,6 +24,49 @@ También hay una aclaración clave sobre `HABLAR PRODUCTOR`: **cuando entra Gonz
 
 La arquitectura general y el comportamiento de producción están documentados en `ARCHITECTURE.md`.
 
+## Checklist del sábado
+
+### Producción / contenidos
+
+- [ ] Logo.
+- [ ] Animación de intro.
+- [ ] Animación de outro.
+
+### OBS y dispositivos
+
+- [ ] Configurar iPhone como cámara principal en OBS.
+- [ ] Configurar JBL Quantum Stream Studio para Guille y Marce.
+- [ ] Configurar cámara de la MacBook Air para Gonza.
+- [ ] Configurar Shure SM57 + interfaz para el audio de Gonza.
+- [ ] Verificar que cámara y micrófono del productor puedan prenderse/apagarse juntos mediante un botón de la botonera.
+- [ ] El productor necesita monitor de video para ver la salida/imagen de OBS.
+- [ ] El productor necesita escuchar el audio de OBS mediante auricular/monitorización adecuada, sin generar feedback al vivo.
+
+### Macros de OBS / botonera
+
+Cada macro de OBS debe quedar asociada a **un botón de la botonera**.
+
+- [ ] Macro para prender/apagar cámara + micrófono del productor.
+- [ ] Macro para ejecutar la intro.
+- [ ] Macro para ejecutar el outro.
+- [ ] Macro para el pie/cambio de sección.
+- [ ] Verificar que cada botón dé feedback claro y que las acciones sean repetibles de forma segura.
+
+### Integración con Codex — tarea de Gonza
+
+Gonza debe:
+
+1. Entrar a ChatGPT.
+2. Abrir un **chat nuevo** específicamente para trabajar en la botonera.
+3. Pasarle a ese chat el link de esta repo:
+   urlhttps://github.com/JRRGUILLE-bit/Botonerahttps://github.com/JRRGUILLE-bit/Botonera
+4. Pedirle a ChatGPT que lea la repo completa, especialmente `README.md` y `ARCHITECTURE.md`, y que lo ayude a usar **Codex** para implementar lo especificado ahí.
+5. El objetivo de Codex es construir la **botonera web personalizada** para controlar OBS según esta arquitectura.
+6. Antes de inventar cualquier comportamiento técnico, respetar las decisiones de producción documentadas en esta repo.
+7. Probar la botonera contra el OBS local y dejar documentado cualquier decisión técnica que haya sido necesaria para completar la implementación.
+
+**La implementación no debe convertirse en una botonera genérica ni en un simple mock visual. El objetivo es una botonera web personalizada, funcional y conectada a OBS.**
+
 ## Purpose
 
 Provide a local software button panel for live production that sends reliable commands to OBS Studio without simulating mouse/keyboard clicks. The first version is intended for use during a livestream, with a UI optimized for fast, unambiguous operation.
