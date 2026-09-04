@@ -2,6 +2,28 @@
 
 Control panel software for OBS Studio, designed initially for a MacBook Air with Apple Silicon (M2 reference).
 
+## Mensaje para Gonza — implementación en Codex
+
+Gonza: este repo es la especificación base para que mañana puedas abrirlo en Codex y hacer la implementación mientras Guille sigue con otras tareas.
+
+Vos ya conocés la operación de producción; el objetivo de este documento es que Codex no tenga que reconstruir decisiones técnicas ni inventar nombres o comportamientos que no definimos.
+
+**Importante:** la `Q` significa **Queue**. `Q MUSICAL`, `Q INTRO` y `Q OUTRO` son acciones de **poner en cola** el contenido correspondiente. No significa simplemente “botón Q” ni debe interpretarse como parte del nombre técnico de una escena de OBS.
+
+También hay una aclaración clave sobre `HABLAR PRODUCTOR`: **cuando entra Gonza como productor, se lo agrega al video; NO se sacan Guille ni Marce del aire.** La acción debe sumar/habilitar la presencia del productor sobre la transmisión manteniendo a los conductores, salvo que una configuración futura indique explícitamente otra cosa.
+
+### Contexto técnico del vivo
+
+- Guille y Marce son los conductores.
+- Gonza participa del programa y además opera la producción desde la Mac.
+- El iPhone 16 es la cámara principal de los tres.
+- JBL Quantum Stream Studio: audio de Guille + Marce.
+- SM57 + interfaz: audio de Gonza.
+- OBS Studio es el centro de video/audio, grabación y streaming.
+- La botonera es una interfaz de control para que Gonza no tenga que navegar OBS durante la conversación.
+
+La arquitectura general y el comportamiento de producción están documentados en `ARCHITECTURE.md`.
+
 ## Purpose
 
 Provide a local software button panel for live production that sends reliable commands to OBS Studio without simulating mouse/keyboard clicks. The first version is intended for use during a livestream, with a UI optimized for fast, unambiguous operation.
@@ -10,15 +32,21 @@ Provide a local software button panel for live production that sends reliable co
 
 The first UI should expose these functions:
 
-- **Q MUSICAL**
-- **Q INTRO**
-- **Q OUTRO**
+- **Q MUSICAL** — Queue Musical.
+- **Q INTRO** — Queue Intro.
+- **Q OUTRO** — Queue Outro.
 - **TRANSICIÓN**
 - **GRABAR**
 - **DETENER**
-- **HABLAR PRODUCTOR** — a configurable sequence that prepares and switches the production to the producer speaking.
+- **HABLAR PRODUCTOR** — adds the producer to the video while keeping Guille and Marce on the video; the exact OBS sequence is configurable.
 
 These labels describe production functions, not necessarily the names of OBS scenes, sources, or devices.
+
+### Queue: significado y límite técnico
+
+`Q` = **Queue**. Las tres acciones de queue representan la intención de producción de poner en cola Musical, Intro u Outro.
+
+El documento **no asume que OBS tenga un comando nativo llamado Queue**. El mecanismo concreto para materializar esa cola en OBS debe definirse mediante configuración y/o la lógica de producción que se implemente. Codex no debe inventar una interpretación técnica de Queue solamente a partir del nombre del botón.
 
 ## Critical implementation principles
 
@@ -29,6 +57,7 @@ These labels describe production functions, not necessarily the names of OBS sce
 5. **Keep the OBS integration isolated.** The UI must not contain OBS WebSocket calls directly; it should invoke an action/command layer.
 6. **Design for future hardware inputs.** A future Stream Deck, Arduino, ESP32, Raspberry Pi, or other physical controller should be able to trigger the same action layer without duplicating OBS logic.
 7. **Fail safely.** Connection loss, unavailable scenes/sources, or invalid configuration must produce a clear UI state/error rather than silently performing a different action.
+8. **Do not remove the hosts when adding the producer.** `HABLAR PRODUCTOR` means adding/enabling Gonza in the video while Guille and Marce remain present.
 
 ## Expected high-level architecture
 
@@ -46,20 +75,24 @@ See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the detailed boundaries and respons
 
 ## Producer speaking action
 
-The producer-speaking control is intentionally specified as a **configurable action sequence**, not as fixed device names.
+`HABLAR PRODUCTOR` is a **configurable production action**. The important production behavior is:
+
+> Add Gonza to the video; do not remove Guille or Marce.
 
 Conceptually it may need to:
 
-1. make the producer camera visible/active;
+1. make the producer camera visible/active in the current video composition;
 2. unmute or otherwise enable the producer microphone;
-3. switch to the appropriate producer scene/layout;
-4. apply the configured transition, if required.
+3. preserve the host video/audio presence;
+4. apply the configured transition or layout change, if required.
 
-The exact OBS scene, camera source, microphone source, transition, and transition duration must be configurable or discovered from OBS. Do not infer permanent names from this document.
+The exact OBS scene, camera source, microphone source, scene-item visibility, transition, and transition duration must be configurable or discovered from OBS. Do not infer permanent names from this document.
+
+If the implementation needs a dedicated scene/layout to achieve this, that scene must contain the hosts as well as the producer. A producer scene that replaces the hosts is **not** the intended behavior.
 
 ## Configuration and discovery
 
-The application should have a configuration mechanism for mapping production actions to actual OBS resources. Where practical, it should query OBS for available scenes, sources, inputs, and transitions so configuration can reference resources that actually exist.
+The application should have a configuration mechanism for mapping production actions to actual OBS resources. Where practical, it should query OBS for available scenes, sources, inputs, scene items, and transitions so configuration can reference resources that actually exist.
 
 The implementation should avoid baking current production-specific names into source code.
 
@@ -88,11 +121,25 @@ The following are deliberately left open for implementation and should be chosen
 - configuration file format and location;
 - whether OBS discovery is fully automatic or assisted by a configuration UI;
 - exact mappings from the seven production controls to OBS commands;
+- exact technical implementation of Queue actions;
 - exact transition type and duration for each action;
+- exact OBS resources used to add Gonza while preserving the hosts;
 - whether buttons should support keyboard shortcuts in addition to mouse/touch input.
 
-Codex must not invent production-specific OBS names or treat examples in this document as fixed values. If an implementation decision is genuinely required but not specified here, choose a minimal, maintainable default and document the decision.
+Codex must not invent production-specific OBS names or treat examples in this document as fixed values. If an implementation decision is genuinely required but not specified here, choose a minimal, maintainable default and document the decision. If the decision affects the intended production behavior, flag it clearly rather than silently changing the behavior.
 
 ## Implementation handoff for Codex
 
-When implementation begins, Codex should first read `README.md` and `ARCHITECTURE.md`, inspect the repository state, and then implement the smallest complete vertical slice: establish the OBS connection, represent production actions independently of OBS resource names, and expose the initial controls through the UI. Keep the architecture extensible for future hardware inputs without implementing hardware support in the first version.
+When implementation begins, Codex should:
+
+1. Read `README.md` and `ARCHITECTURE.md` completely.
+2. Inspect the repository state before changing anything.
+3. Preserve the production semantics documented here, especially **Q = Queue** and **HABLAR PRODUCTOR = add Gonza without removing Guille or Marce**.
+4. Implement the smallest complete vertical slice: establish the OBS connection, represent production actions independently of OBS resource names, and expose the initial controls through the UI.
+5. Keep OBS integration isolated from the UI.
+6. Make production-specific OBS resources configurable/discoverable instead of hardcoding guesses.
+7. Test the actions against a real local OBS instance where possible.
+8. Document any implementation decision that was not explicitly specified.
+9. Keep the architecture extensible for future hardware inputs without implementing hardware support in the first version.
+
+**Do not stop at a mock UI if the local OBS connection and core actions can be implemented and tested. The objective is a usable V1, not only a visual prototype.**
