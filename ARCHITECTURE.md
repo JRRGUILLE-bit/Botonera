@@ -1,5 +1,16 @@
 # Architecture
 
+## 0. Mensaje de producción para Gonza
+
+Gonza es **participante + productor**. La botonera se diseña para que pueda operar OBS sin dejar de participar de la conversación.
+
+Dos reglas de producción son fundamentales y no deben perderse durante la implementación:
+
+1. **`Q` significa Queue.** `Q MUSICAL`, `Q INTRO` y `Q OUTRO` representan acciones de poner en cola el contenido correspondiente. Queue es una intención de producción; no debe asumirse que existe un comando nativo de OBS llamado `Queue`.
+2. **`HABLAR PRODUCTOR` agrega a Gonza al video y NO saca a Guille ni a Marce.** Si se utiliza una escena/layout alternativo, esa composición debe conservar a los dos conductores y sumar al productor. No implementar una escena de “solo productor” como interpretación de este botón.
+
+Los nombres concretos de cámaras, micrófonos, escenas y fuentes todavía no son requisitos fijos. Codex debe hacerlos configurables o descubrirlos desde OBS.
+
 ## 1. Architectural goal
 
 The application is a local control surface for OBS Studio. Its architecture must keep the production intent of a button separate from the technical details required to execute that intent in OBS.
@@ -10,9 +21,28 @@ The key design rule is:
 
 This makes the application configurable for different OBS setups and allows future physical controllers to reuse the same control logic.
 
-## 2. Components
+## 2. Production context
 
-### 2.1 UI layer
+The V1 livestream setup is:
+
+```text
+GUILLE — host
+MARCE  — host
+GONZA  — participant + producer
+
+Video: iPhone 16
+Host audio: JBL Quantum Stream Studio
+Producer audio: SM57 -> audio interface -> Mac
+Control: software button panel -> OBS WebSocket -> OBS
+```
+
+The iPhone is the main camera for the three people. The producer button is therefore primarily a **composition/state change** that adds Gonza to the existing program rather than replacing the hosts.
+
+The broader technical production document supplied for this project also defines the intended OBS baseline: 1920x1080 canvas/output, 30 fps, 48 kHz audio, local MKV recording, separate audio tracks where possible, and local operation without relying on internet services for control.
+
+## 3. Components
+
+### 3.1 UI layer
 
 Responsible only for presentation and user interaction.
 
@@ -28,42 +58,59 @@ The UI must not contain OBS WebSocket protocol calls or OBS-specific resource lo
 
 Initial controls:
 
-- `Q MUSICAL`
-- `Q INTRO`
-- `Q OUTRO`
+- `Q MUSICAL` — Queue Musical
+- `Q INTRO` — Queue Intro
+- `Q OUTRO` — Queue Outro
 - `TRANSICIÓN`
 - `GRABAR`
 - `DETENER`
 - `HABLAR PRODUCTOR`
 
-### 2.2 Production action layer
+### 3.2 Production action layer
 
 Represents what the operator wants to accomplish rather than how OBS accomplishes it.
 
-Examples of conceptual actions:
+Conceptual internal actions should use unambiguous names such as:
 
-- `Q_MUSICAL`
-- `Q_INTRO`
-- `Q_OUTRO`
+- `QUEUE_MUSICAL`
+- `QUEUE_INTRO`
+- `QUEUE_OUTRO`
 - `TRANSITION`
 - `START_RECORDING`
 - `STOP_RECORDING`
 - `PRODUCER_SPEAKING`
 
+**Queue semantics:** `QUEUE_*` means “put this production content in the queue.” The architecture must not invent a specific OBS command for Queue. The actual implementation may involve scene/source/media state changes, a local queue/state model, or another configured sequence depending on how the production workflow is defined. That mapping belongs in configuration/action logic, not in the button label.
+
 An action may translate into one OBS command or a sequence of commands.
 
-For example, `PRODUCER_SPEAKING` may resolve to a sequence such as:
+### 3.3 Producer speaking action
+
+`PRODUCER_SPEAKING` has a specific production requirement:
+
+> Add Gonza to the video while keeping Guille and Marce in the video.
+
+A possible implementation sequence is:
 
 ```text
-activate/show producer camera source
-unmute/enable producer microphone source
-switch to producer scene/layout
-apply configured transition
+make producer camera visible/active
+        ↓
+unmute/enable producer microphone
+        ↓
+preserve host camera/video presence
+        ↓
+apply configured composition/layout change
+        ↓
+apply configured transition if required
 ```
 
-This is a behavioral example, not a fixed implementation. The actual resources must come from configuration and/or OBS discovery.
+This is behavioral guidance, not a demand for a particular OBS scene structure. The implementation may use scene switching, scene-item visibility, source activation, or another OBS mechanism. What matters is the resulting behavior: **Gonza is added; the hosts remain.**
 
-### 2.3 Configuration layer
+If a dedicated scene is used, it must contain the hosts plus the producer. A scene that replaces the hosts with Gonza is incorrect for this action.
+
+The exact OBS scene, camera source, microphone source, scene-item IDs, transition, and transition duration must be configurable or discovered from OBS.
+
+### 3.4 Configuration layer
 
 Stores the mapping between production actions and the actual OBS resources/commands required by the current setup.
 
@@ -72,15 +119,15 @@ It should be possible to change the OBS setup without recompiling the applicatio
 Configuration may eventually describe things such as:
 
 ```text
-Q_INTRO -> switch to configured intro scene
-Q_OUTRO -> switch to configured outro scene
+QUEUE_INTRO -> configured queue behavior
+QUEUE_OUTRO -> configured queue behavior
 START_RECORDING -> OBS StartRecord
-PRODUCER_SPEAKING -> configured scene + configured mic + configured camera + transition
+PRODUCER_SPEAKING -> configured producer camera + mic + host-preserving layout + transition
 ```
 
 The exact schema is intentionally open for implementation.
 
-### 2.4 OBS discovery layer
+### 3.5 OBS discovery layer
 
 Optional but strongly preferred.
 
@@ -95,7 +142,9 @@ The application should be able to query OBS through WebSocket for available reso
 
 Discovery should help configuration reference real resources instead of relying on guessed or stale names.
 
-### 2.5 OBS WebSocket client
+For `HABLAR PRODUCTOR`, discovery/configuration should make it possible to identify the producer camera and microphone and verify that the selected video composition also contains the hosts.
+
+### 3.6 OBS WebSocket client
 
 This is the only layer that should know the OBS WebSocket protocol and request/response details.
 
@@ -110,7 +159,7 @@ Responsibilities:
 
 The rest of the application should not need to know WebSocket message formats.
 
-### 2.6 Future hardware input layer
+### 3.7 Future hardware input layer
 
 Not part of the first implementation.
 
@@ -124,7 +173,7 @@ Future hardware ─┘
 
 Possible future inputs include Stream Deck, Arduino, ESP32, Raspberry Pi, MIDI, or another controller. No hardware-specific code should be required in the OBS integration layer.
 
-## 3. Runtime flow
+## 4. Runtime flow
 
 A normal button press should follow this sequence:
 
@@ -148,7 +197,9 @@ UI reflects success, state, or error
 
 For multi-step actions, the action layer owns the sequence and should handle failures explicitly.
 
-## 4. Resource naming rule
+For Queue actions, the action layer must preserve the production meaning of “put this content in queue” rather than treating the Q as a generic scene-switch shortcut.
+
+## 5. Resource naming rule
 
 Names such as `Micrófono 2`, `Cámara 2`, `Escena Productor`, `INTRO`, etc. must be treated as examples unless they are explicitly configured by the user.
 
@@ -159,15 +210,17 @@ Production labels and OBS resource identifiers are different concepts:
 ```text
 Production intent:  HABLAR PRODUCTOR
                        ↓
-Configuration:       producer_scene = <actual OBS scene>
-                     producer_camera = <actual OBS source>
-                     producer_mic = <actual OBS input>
-                     transition = <actual OBS transition>
+Configuration:       producer_scene/layout = <host-preserving composition>
+                     producer_camera       = <actual OBS source>
+                     producer_mic          = <actual OBS input>
+                     transition            = <actual OBS transition>
                        ↓
 OBS commands
 ```
 
-## 5. Reliability requirements
+The `<host-preserving composition>` requirement is functional: whatever OBS resources are selected, Guille and Marce must remain in the video when Gonza is added.
+
+## 6. Reliability requirements
 
 Because the application is intended for live production:
 
@@ -179,8 +232,11 @@ Because the application is intended for live production:
 - Avoid blocking the UI while waiting for OBS responses.
 - Keep logs useful for diagnosing connection and command failures.
 - Prefer deterministic behavior over clever automation.
+- Protect destructive/end actions from accidental presses where appropriate.
+- Give the operator immediate visible feedback after an action.
+- Avoid double-triggering a multi-step action from accidental rapid presses unless the action is explicitly designed to be repeatable.
 
-## 6. macOS / Apple Silicon target
+## 7. macOS / Apple Silicon target
 
 The reference machine is a MacBook Air with an Apple M2 chip.
 
@@ -188,7 +244,7 @@ The first implementation must run natively and reliably on modern macOS/Apple Si
 
 Do not introduce cross-platform complexity unless it provides a concrete benefit to this project.
 
-## 7. Separation of concerns
+## 8. Separation of concerns
 
 The following dependencies are desirable:
 
@@ -212,7 +268,7 @@ UI button → hardcoded OBS scene name → raw WebSocket request
 
 That pattern makes the application difficult to maintain and prevents future hardware inputs from sharing the same behavior.
 
-## 8. Initial implementation boundary
+## 9. Initial implementation boundary
 
 The first implementation should not attempt to solve every future requirement.
 
@@ -225,10 +281,12 @@ Minimum useful vertical slice:
 5. Render the seven initial controls.
 6. Execute at least the core OBS actions reliably.
 7. Show connection and command errors clearly.
+8. Implement `HABLAR PRODUCTOR` so the configured producer camera/mic are added/enabled without removing the hosts.
+9. Keep Queue actions represented as Queue production intents, with their concrete OBS mapping configurable.
 
 Do not implement physical hardware support, remote/cloud control, or unnecessary backend infrastructure in the first version.
 
-## 9. Decisions intentionally left open
+## 10. Decisions intentionally left open
 
 Codex may choose the language, UI framework, project structure, configuration format, and packaging approach, provided the choices satisfy this architecture.
 
@@ -241,3 +299,5 @@ When a choice is not specified:
 5. document significant decisions.
 
 If a production-specific detail is missing, do not invent a permanent OBS resource name. Make it configurable or clearly mark it as an implementation decision requiring configuration.
+
+Do not reinterpret `Q` or change the producer behavior to simplify implementation.
